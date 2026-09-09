@@ -25,6 +25,8 @@
   "CR.ResizePanel": "Изменить высоту списка",
   "CR.ScrollPrevious": "Показать предыдущие счётчики",
   "CR.ScrollNext": "Показать следующие счётчики",
+  "CR.MoveHud": "Перетащить HUD",
+  "CR.ResetHudPosition": "Вернуть автоматическое положение HUD",
   "CR.ShowHud": "Показать HUD",
   "CR.HideHud": "Скрыть HUD",
   "CR.Collapse": "Свернуть",

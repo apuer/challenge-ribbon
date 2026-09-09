@@ -3,7 +3,7 @@
   "type": "module",
   "title": "Challenge Ribbon",
   "description": "Compact skill-challenge counters with a GM ribbon and a public hourglass HUD.",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "authors": [
     {
       "name": "Challenge Ribbon contributors"
@@ -36,5 +36,5 @@
   "readme": "README.md",
   "url": "https://github.com/apuer/challenge-ribbon",
   "manifest": "https://github.com/apuer/challenge-ribbon/releases/latest/download/module.json",
-  "download": "https://github.com/apuer/challenge-ribbon/releases/download/v0.6.0/challenge-ribbon.zip"
+  "download": "https://github.com/apuer/challenge-ribbon/releases/download/v0.7.0/challenge-ribbon.zip"
 }

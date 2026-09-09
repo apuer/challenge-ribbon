@@ -25,6 +25,8 @@
   "CR.ResizePanel": "Resize counter list",
   "CR.ScrollPrevious": "Show previous counters",
   "CR.ScrollNext": "Show next counters",
+  "CR.MoveHud": "Drag HUD",
+  "CR.ResetHudPosition": "Restore automatic HUD position",
   "CR.ShowHud": "Show HUD",
   "CR.HideHud": "Hide HUD",
   "CR.Collapse": "Collapse",

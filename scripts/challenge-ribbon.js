@@ -35,7 +35,9 @@ const DEFAULT_STATE = Object.freeze({
 let scheduledRender = null;
 let panelDrag = null;
 let panelResize = null;
+let hudDrag = null;
 let hudLayoutFrame = null;
+let hudLayoutTimer = null;
 let hudResizeObserver = null;
 let hudTreeObserver = null;
 let combatDockObserver = null;
@@ -80,6 +82,14 @@ Hooks.once("init", () => {
     config: false,
     type: Number,
     default: COUNTER_ROW_HEIGHT * DEFAULT_VISIBLE_ROWS,
+  });
+
+  game.settings.register(MODULE_ID, "hudPosition", {
+    name: "Challenge Ribbon: HUD position",
+    scope: "client",
+    config: false,
+    type: Object,
+    default: { mode: "auto" },
   });
 
   game.settings.register(MODULE_ID, LEGACY_MIGRATION_SETTING, {
@@ -169,6 +179,7 @@ function ensureRoot() {
   root.addEventListener("click", onRootClick);
   root.addEventListener("pointerdown", startPanelDrag);
   root.addEventListener("pointerdown", startPanelResize);
+  root.addEventListener("pointerdown", startHudDrag);
   root.addEventListener("scroll", updateHudOverflowControls, true);
   root.addEventListener("wheel", onHudWheel, { passive: false });
   document.getElementById("interface")?.append(root);
@@ -261,12 +272,15 @@ function renderHud(state) {
     return isRecentlyCompleted(counter);
   });
   if (!counters.length) return "";
+  const manual = game.settings.get(MODULE_ID, "hudPosition")?.mode === "manual";
 
   return `
-    <section class="cr-hud" aria-label="${escapeHtml(t("CR.Title"))}">
+    <section class="cr-hud ${manual ? "is-manual" : ""}" aria-label="${escapeHtml(t("CR.Title"))}">
+      <div class="cr-hud-drag-handle" data-hud-drag-handle title="${escapeHtml(t("CR.MoveHud"))}"><span aria-hidden="true">•••</span></div>
       <button class="cr-hud-scroll cr-hud-scroll--previous" data-action="hud-scroll-previous" aria-label="${escapeHtml(t("CR.ScrollPrevious"))}" hidden><i class="fa-solid fa-chevron-left"></i></button>
       <div class="cr-hud__viewport"><div class="cr-hud__counters">${counters.map(renderHudCounter).join("")}</div></div>
       <button class="cr-hud-scroll cr-hud-scroll--next" data-action="hud-scroll-next" aria-label="${escapeHtml(t("CR.ScrollNext"))}" hidden><i class="fa-solid fa-chevron-right"></i></button>
+      ${manual ? `<button class="cr-hud-reset" data-action="hud-reset-position" title="${escapeHtml(t("CR.ResetHudPosition"))}" aria-label="${escapeHtml(t("CR.ResetHudPosition"))}"><i class="fa-solid fa-rotate-left"></i></button>` : ""}
     </section>
   `;
 }
@@ -309,6 +323,11 @@ async function onRootClick(event) {
   const action = target.dataset.action;
   if (action === "hud-scroll-previous") return scrollHud(-1);
   if (action === "hud-scroll-next") return scrollHud(1);
+  if (action === "hud-reset-position") {
+    await game.settings.set(MODULE_ID, "hudPosition", { mode: "auto" });
+    renderChallengeRibbon();
+    return;
+  }
   if (!game.user.isGM) return;
   const row = target.closest("[data-counter-id]");
   const state = getState();
@@ -478,6 +497,8 @@ function setupHudLayoutObservers() {
     scheduleHudLayout();
   });
   hudTreeObserver.observe(document.body, { childList: true, subtree: true });
+  window.clearInterval(hudLayoutTimer);
+  hudLayoutTimer = window.setInterval(scheduleHudLayout, 250);
   refreshHudLayoutTargets();
 }
 
@@ -506,9 +527,23 @@ function scheduleHudLayout() {
 }
 
 function positionHudAroundCombatDock() {
+  if (hudDrag) return;
   const root = document.getElementById(ROOT_ID);
   const hud = root?.querySelector(".cr-hud");
   if (!root || !hud) return;
+  const savedPosition = game.settings.get(MODULE_ID, "hudPosition") ?? { mode: "auto" };
+  if (savedPosition.mode === "manual") {
+    const manualPosition = clampHudPosition({
+      left: numberOr(savedPosition.left, 0),
+      top: numberOr(savedPosition.top, HUD_BASE_TOP),
+    }, hud, root);
+    hud.style.left = `${manualPosition.left}px`;
+    hud.style.top = `${manualPosition.top}px`;
+    hud.style.transform = "none";
+    return;
+  }
+  hud.style.left = "calc(50% - 110px)";
+  hud.style.transform = "translateX(-50%)";
   const combatDock = document.querySelector("#combat-dock");
   if (!isVisible(combatDock)) {
     hud.style.top = `${HUD_BASE_TOP}px`;
@@ -534,7 +569,73 @@ function isVisible(element) {
   if (!element) return false;
   const rect = element.getBoundingClientRect();
   const style = window.getComputedStyle(element);
-  return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden";
+  return rect.width > 0
+    && rect.height > 0
+    && !element.hidden
+    && element.getAttribute("aria-hidden") !== "true"
+    && !element.classList.contains("hidden")
+    && style.display !== "none"
+    && style.visibility !== "hidden"
+    && style.opacity !== "0";
+}
+
+function startHudDrag(event) {
+  const handle = event.target.closest("[data-hud-drag-handle]");
+  if (!handle || event.button !== 0) return;
+  const hud = handle.closest(".cr-hud");
+  const root = document.getElementById(ROOT_ID);
+  if (!hud || !root) return;
+  const rootRect = root.getBoundingClientRect();
+  const hudRect = hud.getBoundingClientRect();
+  hudDrag = {
+    hud,
+    root,
+    startX: event.clientX,
+    startY: event.clientY,
+    startLeft: hudRect.left - rootRect.left,
+    startTop: hudRect.top - rootRect.top,
+  };
+  hud.style.left = `${hudDrag.startLeft}px`;
+  hud.style.top = `${hudDrag.startTop}px`;
+  hud.style.transform = "none";
+  hud.classList.add("is-hud-dragging");
+  document.addEventListener("pointermove", moveHud);
+  document.addEventListener("pointerup", finishHudDrag, { once: true });
+  document.addEventListener("pointercancel", finishHudDrag, { once: true });
+  event.preventDefault();
+}
+
+function moveHud(event) {
+  if (!hudDrag) return;
+  const position = clampHudPosition({
+    left: hudDrag.startLeft + event.clientX - hudDrag.startX,
+    top: hudDrag.startTop + event.clientY - hudDrag.startY,
+  }, hudDrag.hud, hudDrag.root);
+  hudDrag.hud.style.left = `${position.left}px`;
+  hudDrag.hud.style.top = `${position.top}px`;
+}
+
+async function finishHudDrag() {
+  if (!hudDrag) return;
+  document.removeEventListener("pointermove", moveHud);
+  document.removeEventListener("pointerup", finishHudDrag);
+  document.removeEventListener("pointercancel", finishHudDrag);
+  const position = {
+    mode: "manual",
+    left: Math.round(Number.parseFloat(hudDrag.hud.style.left)),
+    top: Math.round(Number.parseFloat(hudDrag.hud.style.top)),
+  };
+  hudDrag.hud.classList.remove("is-hud-dragging");
+  hudDrag = null;
+  await game.settings.set(MODULE_ID, "hudPosition", position);
+  renderChallengeRibbon();
+}
+
+function clampHudPosition(position, hud, root) {
+  return {
+    left: clamp(position.left, 0, Math.max(0, root.clientWidth - hud.offsetWidth)),
+    top: clamp(position.top, 0, Math.max(0, root.clientHeight - hud.offsetHeight)),
+  };
 }
 
 function updateHudOverflowControls() {
