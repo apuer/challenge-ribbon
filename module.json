@@ -1,0 +1,37 @@
+{
+  "id": "challenge-ribbon",
+  "type": "module",
+  "title": "Challenge Ribbon",
+  "description": "Compact skill-challenge counters with a GM ribbon and a public hourglass HUD.",
+  "version": "0.1.0",
+  "authors": [
+    {
+      "name": "Challenge Ribbon contributors"
+    }
+  ],
+  "compatibility": {
+    "minimum": "14",
+    "verified": "14"
+  },
+  "esmodules": [
+    "scripts/challenge-ribbon.js"
+  ],
+  "styles": [
+    "styles/challenge-ribbon.css"
+  ],
+  "languages": [
+    {
+      "lang": "en",
+      "name": "English",
+      "path": "lang/en.json"
+    },
+    {
+      "lang": "ru",
+      "name": "Русский",
+      "path": "lang/ru.json"
+    }
+  ],
+  "socket": false,
+  "license": "LICENSE",
+  "readme": "README.md"
+}

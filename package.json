@@ -1,0 +1,10 @@
+{
+  "name": "challenge-ribbon",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "node scripts/validate.mjs",
+    "build": "node scripts/build-release.mjs"
+  }
+}
