@@ -498,7 +498,7 @@ function setupHudLayoutObservers() {
   });
   hudTreeObserver.observe(document.body, { childList: true, subtree: true });
   window.clearInterval(hudLayoutTimer);
-  hudLayoutTimer = window.setInterval(scheduleHudLayout, 250);
+  hudLayoutTimer = window.setInterval(pollHudLayout, 500);
   refreshHudLayoutTargets();
 }
 
@@ -514,8 +514,18 @@ function refreshHudLayoutTargets() {
   if (combatDock) {
     hudResizeObserver.observe(combatDock);
     combatDockObserver = new MutationObserver(scheduleHudLayout);
-    combatDockObserver.observe(combatDock, { attributes: true, attributeFilter: ["class", "style", "hidden"] });
+    for (let element = combatDock; element && element !== document.body; element = element.parentElement) {
+      combatDockObserver.observe(element, { attributes: true, attributeFilter: ["class", "style", "hidden"] });
+    }
   }
+}
+
+function pollHudLayout() {
+  const hud = document.querySelector(`#${ROOT_ID} .cr-hud`);
+  const combatDock = document.querySelector("#combat-dock");
+  const automatic = game.settings.get(MODULE_ID, "hudPosition")?.mode !== "manual";
+  if (!hud || !combatDock || !automatic) return;
+  scheduleHudLayout();
 }
 
 function scheduleHudLayout() {
