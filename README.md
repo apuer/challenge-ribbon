@@ -1,18 +1,19 @@
-# Challenge Ribbon 0.1.0
+# Challenge Ribbon 0.2.0
 
 A compact, system-agnostic Foundry VTT 14 module for skill-challenge counters.
 
 ## Features
 
-- GM ribbon with multiple positive and negative counters.
-- Public, read-only HUD synchronized through the current Scene.
+- GM-only ribbon with multiple positive and negative counters.
+- Public, read-only HUD for players.
 - Prominent animated hourglass for every counter.
 - Increasing green or red intensity as a counter approaches its maximum.
 - Completion flash.
 - Optional **hide from HUD when complete** animation per counter.
 - Start, current and maximum values.
+- Forward counters that complete at the maximum and reverse counters that complete at the minimum.
 - Per-counter player visibility (UI-only; not secure storage).
-- Reset, delete and reorder controls.
+- Reset, delete and drag-and-drop reordering.
 - Russian and English localization.
 - Reduced-motion support.
 
@@ -35,7 +36,7 @@ The URL remains stable across releases. New tags such as `v0.2.0` automatically 
 3. Enable **Challenge Ribbon** in the world's module settings.
 4. Open a Scene and use the hourglass button in Token Controls.
 
-The module stores one challenge per Scene in `flags.challenge-ribbon.state`.
+The module stores one shared set of counters for the whole World, so counters remain active while changing Scenes. Version 0.2.0 migrates counters from the active Scene when upgrading from 0.1.0.
 
 ## Notes
 
@@ -49,7 +50,7 @@ The module stores one challenge per Scene in `flags.challenge-ribbon.state`.
 The repository validates itself on each push. To publish a version, update the version in `module.json` and `package.json`, commit it, then push a matching tag:
 
 ```sh
-git tag v0.1.0
+git tag v0.2.0
 git push origin main --tags
 ```
 
