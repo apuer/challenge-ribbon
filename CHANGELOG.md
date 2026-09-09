@@ -3,7 +3,7 @@
 ## 0.7.0 — 2026-09-10
 
 - Fixed the HUD remaining displaced when Carousel Combat Tracker moved through a parent layout change or disappeared without mutating `#combat-dock` itself.
-- Added a lightweight geometry check four times per second while the client is open.
+- Added event-driven observation of `#combat-dock` and its parent layout, plus a conditional geometry fallback twice per second.
 - Made the public HUD draggable independently for every client, including players.
 - Added an explicit reset button that restores automatic collision-aware placement after manual positioning.
 - Kept automatic collision movement disabled while the user is actively dragging the HUD.
