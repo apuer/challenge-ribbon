@@ -1,11 +1,25 @@
+import {
+  applyCounterDelta,
+  counterDirectionClass,
+  counterProgress,
+  counterTargetLabel,
+  createCounterDraft,
+  defaultStartFor,
+  formatCounterValue,
+  isCounterComplete,
+  normalizeCounter,
+  parseCounterDirection,
+} from "./counter-model.js";
+
 const MODULE_ID = "challenge-ribbon";
 const STATE_SETTING = "state";
+const LEGACY_MIGRATION_SETTING = "legacyMigrationComplete";
 const LEGACY_FLAG_KEY = "state";
 const ROOT_ID = "challenge-ribbon-root";
 const HUD_EXIT_MS = 1150;
 
 const DEFAULT_STATE = Object.freeze({
-  version: 3,
+  version: 4,
   hudVisible: false,
   counters: [],
 });
@@ -46,6 +60,14 @@ Hooks.once("init", () => {
     type: Object,
     default: { left: 72, top: 122 },
   });
+
+  game.settings.register(MODULE_ID, LEGACY_MIGRATION_SETTING, {
+    name: "Challenge Ribbon: legacy Scene migration completed",
+    scope: "world",
+    config: false,
+    type: Boolean,
+    default: false,
+  });
 });
 
 Hooks.on("getSceneControlButtons", controls => {
@@ -64,7 +86,10 @@ Hooks.on("getSceneControlButtons", controls => {
   };
 });
 
-Hooks.on("canvasReady", () => renderChallengeRibbon());
+Hooks.on("canvasReady", async () => {
+  await migrateLegacySceneState();
+  renderChallengeRibbon();
+});
 
 Hooks.once("ready", async () => {
   await migrateLegacySceneState();
@@ -81,50 +106,36 @@ function getState() {
   const state = {
     ...foundry.utils.deepClone(DEFAULT_STATE),
     ...(saved ? foundry.utils.deepClone(saved) : {}),
-    version: 3,
+    version: 4,
   };
-  state.counters = Array.isArray(state.counters) ? state.counters.map(normalizeCounter) : [];
+  state.counters = Array.isArray(state.counters) ? state.counters.map(normalizeAppCounter) : [];
   return state;
 }
 
 async function saveState(state) {
   if (!game.user.isGM) return;
-  state.version = 3;
+  state.version = 4;
   await game.settings.set(MODULE_ID, STATE_SETTING, state);
 }
 
 async function migrateLegacySceneState() {
-  if (!game.user.isGM || !canvas?.scene) return;
+  if (!game.user.isGM || game.settings.get(MODULE_ID, LEGACY_MIGRATION_SETTING) || !canvas?.scene) return;
   const current = getState();
-  if (current.counters.length) return;
-
   const legacy = canvas.scene.getFlag(MODULE_ID, LEGACY_FLAG_KEY);
-  if (!legacy?.counters?.length) return;
-
-  await saveState({
-    version: 3,
-    hudVisible: Boolean(legacy.hudVisible),
-    counters: legacy.counters.map(normalizeCounter),
-  });
+  if (!current.counters.length && legacy?.counters?.length) {
+    await saveState({
+      version: 4,
+      hudVisible: Boolean(legacy.hudVisible),
+      counters: legacy.counters.map(normalizeAppCounter),
+    });
+  }
+  await game.settings.set(MODULE_ID, LEGACY_MIGRATION_SETTING, true);
 }
 
-function normalizeCounter(counter) {
-  const min = 0;
-  const max = Math.max(1, numberOr(counter.max, 4));
-  const direction = counter.direction === "down" ? "down" : "up";
-  return {
-    id: counter.id || foundry.utils.randomID(),
-    label: String(counter.label || ""),
-    kind: counter.kind === "negative" ? "negative" : "positive",
-    direction,
-    min,
-    start: clamp(numberOr(counter.start, direction === "down" ? max : min), min, max),
-    value: clamp(numberOr(counter.value, direction === "down" ? max : min), min, max),
-    max,
-    showToPlayers: counter.showToPlayers !== false,
-    hideWhenComplete: Boolean(counter.hideWhenComplete),
-    completedAt: counter.completedAt || null,
-  };
+function normalizeAppCounter(counter) {
+  const normalized = normalizeCounter(counter);
+  normalized.id ||= foundry.utils.randomID();
+  return normalized;
 }
 
 function ensureRoot() {
@@ -135,7 +146,6 @@ function ensureRoot() {
   root.id = ROOT_ID;
   root.addEventListener("click", onRootClick);
   root.addEventListener("pointerdown", startPanelDrag);
-  root.addEventListener("dblclick", resetPanelPosition);
   document.getElementById("interface")?.append(root);
   return root;
 }
@@ -185,20 +195,20 @@ function renderRibbon(state, collapsed) {
 }
 
 function renderCounterRow(counter, index, total) {
-  const complete = isComplete(counter);
+  const complete = isCounterComplete(counter);
   const archived = complete && counter.hideWhenComplete;
   const recent = isRecentlyCompleted(counter);
   const kindLabel = counter.kind === "negative" ? t("CR.Threat") : t("CR.Progress");
-  const targetLabel = counter.direction === "down" ? `↓ ${counter.min}` : `↑ ${counter.max}`;
+  const targetLabel = counterTargetLabel(counter);
 
   return `
-    <article class="cr-counter cr-counter--${counter.kind} ${counter.direction === "down" ? "is-reverse" : ""} ${recent ? "is-completing" : ""} ${archived ? "is-archived" : ""}" data-counter-id="${counter.id}" style="--cr-progress:${counterProgress(counter)}">
+    <article class="cr-counter cr-counter--${counter.kind} ${counterDirectionClass(counter)} ${recent ? "is-completing" : ""} ${archived ? "is-archived" : ""}" data-counter-id="${counter.id}" style="--cr-progress:${counterProgress(counter).toFixed(3)}">
       ${renderHourglass(counter, "ribbon")}
       <button class="cr-counter__copy" data-action="edit" title="${escapeHtml(t("CR.EditCounter"))}">
         <b>${escapeHtml(counter.label)}</b>
         <small>${archived ? escapeHtml(t("CR.CompleteHidden")) : `${escapeHtml(kindLabel)} · ${targetLabel}`}</small>
       </button>
-      <span class="cr-counter__value">${formatValue(counter)}</span>
+      <span class="cr-counter__value">${formatCounterValue(counter)}</span>
       <div class="cr-stepper">
         <button data-action="decrement" aria-label="− ${escapeHtml(counter.label)}">−</button>
         <button data-action="increment" aria-label="+ ${escapeHtml(counter.label)}">+</button>
@@ -216,7 +226,7 @@ function renderHud(state) {
 
   const counters = state.counters.filter(counter => {
     if (!counter.showToPlayers && !game.user.isGM) return false;
-    if (!counter.hideWhenComplete || !isComplete(counter)) return true;
+    if (!counter.hideWhenComplete || !isCounterComplete(counter)) return true;
     return isRecentlyCompleted(counter);
   });
   if (!counters.length) return "";
@@ -232,16 +242,16 @@ function renderHudCounter(counter) {
   const recent = isRecentlyCompleted(counter);
   const exits = recent && counter.hideWhenComplete;
   return `
-    <div class="cr-hud-counter cr-counter--${counter.kind} ${counter.direction === "down" ? "is-reverse" : ""} ${recent ? "is-completing" : ""} ${exits ? "will-exit" : ""}" style="--cr-progress:${counterProgress(counter)}">
+    <div class="cr-hud-counter cr-counter--${counter.kind} ${counterDirectionClass(counter)} ${recent ? "is-completing" : ""} ${exits ? "will-exit" : ""}" style="--cr-progress:${counterProgress(counter).toFixed(3)}">
       ${renderHourglass(counter, "hud")}
       <span class="cr-hud-counter__label">${escapeHtml(counter.label)}</span>
-      <span class="cr-hud-counter__value">${formatValue(counter)}</span>
+      <span class="cr-hud-counter__value">${formatCounterValue(counter)}</span>
     </div>
   `;
 }
 
 function renderHourglass(counter, size) {
-  const progress = Number(counterProgress(counter));
+  const progress = counterProgress(counter);
   const upperOpacity = Math.max(0.08, 0.72 - progress * 0.64).toFixed(2);
   const id = `${size}-${counter.id}`.replace(/[^a-zA-Z0-9_-]/g, "");
   return `
@@ -295,11 +305,7 @@ async function onRootClick(event) {
 }
 
 function applyDelta(counter, delta) {
-  const wasComplete = isComplete(counter);
-  counter.value = clamp(counter.value + delta, counter.min, counter.max);
-  const complete = isComplete(counter);
-  if (!wasComplete && complete) counter.completedAt = Date.now();
-  if (!complete) counter.completedAt = null;
+  applyCounterDelta(counter, delta);
 }
 
 function applyPanelPosition(ribbon, root) {
@@ -361,12 +367,6 @@ async function finishPanelDrag() {
   await game.settings.set(MODULE_ID, "ribbonPosition", position);
 }
 
-async function resetPanelPosition(event) {
-  if (!event.target.closest("[data-panel-drag-handle]") || !game.user.isGM) return;
-  await game.settings.set(MODULE_ID, "ribbonPosition", { left: 72, top: 122 });
-  renderChallengeRibbon();
-}
-
 function clampPanelPosition(position, ribbon, root) {
   const maxLeft = Math.max(0, root.clientWidth - ribbon.offsetWidth);
   const maxTop = Math.max(0, root.clientHeight - ribbon.offsetHeight);
@@ -383,17 +383,7 @@ async function toggleRibbon() {
 }
 
 function openCounterDialog(existing = null, existingIndex = -1, opener = null) {
-  const counter = normalizeCounter(existing ?? {
-    label: "",
-    kind: "positive",
-    direction: "up",
-    min: 0,
-    start: 0,
-    value: 0,
-    max: 4,
-    showToPlayers: true,
-    hideWhenComplete: false,
-  });
+  const counter = existing ? normalizeAppCounter(existing) : createCounterDraft();
   const dialog = createDialog("cr-counter-dialog", opener);
   dialog.innerHTML = `
     <form method="dialog" class="cr-form">
@@ -402,8 +392,8 @@ function openCounterDialog(existing = null, existingIndex = -1, opener = null) {
       <label class="cr-field"><span>${escapeHtml(t("CR.Type"))}</span><select name="kind"><option value="positive" ${counter.kind === "positive" ? "selected" : ""}>${escapeHtml(t("CR.Positive"))}</option><option value="negative" ${counter.kind === "negative" ? "selected" : ""}>${escapeHtml(t("CR.Negative"))}</option></select></label>
       <label class="cr-field"><span>${escapeHtml(t("CR.Direction"))}</span><select name="direction"><option value="up" ${counter.direction === "up" ? "selected" : ""}>${escapeHtml(t("CR.CountUp"))}</option><option value="down" ${counter.direction === "down" ? "selected" : ""}>${escapeHtml(t("CR.CountDown"))}</option></select></label>
       <div class="cr-form__numbers">
-        <label class="cr-field"><span>${escapeHtml(t("CR.Start"))}</span><input name="start" type="number" min="-999" max="999" value="${counter.start}" required /></label>
-        <label class="cr-field"><span>${escapeHtml(t("CR.Current"))}</span><input name="value" type="number" min="-999" max="999" value="${counter.value}" required /></label>
+        <label class="cr-field"><span>${escapeHtml(t("CR.Start"))}</span><input name="start" type="number" min="0" max="999" value="${counter.start}" required /></label>
+        <label class="cr-field"><span>${escapeHtml(t("CR.Current"))}</span><input name="value" type="number" min="0" max="999" value="${counter.value}" required /></label>
         <label class="cr-field"><span>${escapeHtml(t("CR.Limit"))}</span><input name="max" type="number" min="1" max="999" value="${counter.max}" required /></label>
       </div>
       <label class="cr-check"><input name="showToPlayers" type="checkbox" ${counter.showToPlayers ? "checked" : ""} /><span>${escapeHtml(t("CR.ShowToPlayers"))}</span></label>
@@ -416,17 +406,30 @@ function openCounterDialog(existing = null, existingIndex = -1, opener = null) {
     </form>
   `;
 
+  const directionInput = dialog.querySelector('[name="direction"]');
+  const limitInput = dialog.querySelector('[name="max"]');
+  const startInput = dialog.querySelector('[name="start"]');
+  const valueInput = dialog.querySelector('[name="value"]');
+  const syncDirectionDefaults = () => {
+    const direction = parseCounterDirection(directionInput.value);
+    const limit = Math.max(1, numberOr(limitInput.value, 1));
+    startInput.value = String(defaultStartFor(direction, limit));
+    if (!existing) valueInput.value = startInput.value;
+  };
+  directionInput.addEventListener("change", syncDirectionDefaults);
+  limitInput.addEventListener("input", syncDirectionDefaults);
+
   dialog.querySelector("form").addEventListener("submit", async event => {
     if (event.submitter?.value !== "save") return;
     event.preventDefault();
     const data = new FormData(event.currentTarget);
     const min = 0;
     const max = Math.max(1, numberOr(data.get("max"), 1));
-    const direction = data.get("direction") === "down" ? "down" : "up";
+    const direction = parseCounterDirection(data.get("direction"));
     const value = clamp(numberOr(data.get("value"), direction === "down" ? max : min), min, max);
     const start = clamp(numberOr(data.get("start"), direction === "down" ? max : min), min, max);
     const state = getState();
-    const updated = normalizeCounter({
+    const updated = normalizeAppCounter({
       id: existing?.id ?? foundry.utils.randomID(),
       label: String(data.get("label")).trim(),
       kind: data.get("kind"),
@@ -439,9 +442,9 @@ function openCounterDialog(existing = null, existingIndex = -1, opener = null) {
       hideWhenComplete: data.has("hideWhenComplete"),
       completedAt: existing?.completedAt ?? null,
     });
-    const wasComplete = existing ? isComplete(normalizeCounter(existing)) : false;
-    if (!wasComplete && isComplete(updated)) updated.completedAt = Date.now();
-    if (!isComplete(updated)) updated.completedAt = null;
+    const wasComplete = existing ? isCounterComplete(normalizeAppCounter(existing)) : false;
+    if (!wasComplete && isCounterComplete(updated)) updated.completedAt = Date.now();
+    if (!isCounterComplete(updated)) updated.completedAt = null;
     if (existingIndex >= 0) state.counters[existingIndex] = updated;
     else state.counters.push(updated);
     await saveState(state);
@@ -480,33 +483,14 @@ function createDialog(className, opener) {
   return dialog;
 }
 
-function formatValue(counter) {
-  return counter.direction === "down"
-    ? `${counter.value}<small>→${counter.min}</small>`
-    : `${counter.value}<small>/${counter.max}</small>`;
-}
-
-function counterProgress(counter) {
-  const range = counter.max - counter.min;
-  if (range <= 0) return "0.000";
-  const raw = counter.direction === "down"
-    ? (counter.max - counter.value) / range
-    : (counter.value - counter.min) / range;
-  return clamp(raw, 0, 1).toFixed(3);
-}
-
-function isComplete(counter) {
-  return counter.direction === "down" ? counter.value <= counter.min : counter.value >= counter.max;
-}
-
 function isRecentlyCompleted(counter) {
-  if (!counter.completedAt || !isComplete(counter)) return false;
+  if (!counter.completedAt || !isCounterComplete(counter)) return false;
   return Date.now() - counter.completedAt < HUD_EXIT_MS;
 }
 
 function nextCompletionExit(state) {
   const times = state.counters
-    .filter(counter => counter.completedAt && isComplete(counter))
+    .filter(counter => counter.completedAt && isCounterComplete(counter))
     .map(counter => HUD_EXIT_MS - (Date.now() - counter.completedAt))
     .filter(remaining => remaining > 0);
   return times.length ? Math.min(...times) : null;

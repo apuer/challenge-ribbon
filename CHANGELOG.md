@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.0 — 2026-09-09
+
+- Fixed new reverse counters so Start and Current automatically follow the configured Limit.
+- Prevented negative Start and Current values in both the editor and counter model.
+- Made legacy Scene migration retry when a Scene becomes ready and record one-time completion, preventing deleted counters from reappearing.
+- Centralized direction-dependent counter behavior in a tested `counter-model.js` module.
+- Removed the unrequested double-click position reset.
+
 ## 0.4.0 — 2026-09-09
 
 - Made the entire GM ribbon movable by dragging the free area in its toolbar.

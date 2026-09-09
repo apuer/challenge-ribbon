@@ -21,7 +21,7 @@
   "CR.Reset": "Reset",
   "CR.MoveUp": "Move up",
   "CR.MoveDown": "Move down",
-  "CR.MovePanel": "Drag panel; double-click to reset position",
+  "CR.MovePanel": "Drag panel",
   "CR.ShowHud": "Show HUD",
   "CR.HideHud": "Hide HUD",
   "CR.Collapse": "Collapse",

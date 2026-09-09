@@ -1,4 +1,4 @@
-# Challenge Ribbon 0.4.0
+# Challenge Ribbon 0.5.0
 
 A compact, system-agnostic Foundry VTT 14 module for skill-challenge counters.
 
@@ -14,7 +14,7 @@ A compact, system-agnostic Foundry VTT 14 module for skill-challenge counters.
 - Forward counters that complete at the limit and reverse counters that complete at zero.
 - Per-counter player visibility (UI-only; not secure storage).
 - Reset, delete and direct up/down reordering controls.
-- Movable GM ribbon with a per-client saved position; double-click its grip to reset.
+- Movable GM ribbon with a per-client saved position.
 - Russian and English localization.
 - Reduced-motion support.
 
@@ -37,7 +37,7 @@ The URL remains stable across releases. New tags such as `v0.2.0` automatically 
 3. Enable **Challenge Ribbon** in the world's module settings.
 4. Open a Scene and use the hourglass button in Token Controls.
 
-The module stores one shared set of counters for the whole World, so counters remain active while changing Scenes. Version 0.2.0 migrates counters from the active Scene when upgrading from 0.1.0.
+The module stores one shared set of counters for the whole World, so counters remain active while changing Scenes. When upgrading from 0.1.0, it imports counters from the active Scene once and records that the legacy migration has completed.
 
 ## Notes
 
@@ -45,14 +45,14 @@ The module stores one shared set of counters for the whole World, so counters re
 - Only GMs can change counters.
 - Player visibility is intentionally presentational rather than secure: counter state is stored in a shared World setting.
 - This is a first functional version. Visual tuning and additional skins are expected later.
-- Drag the dotted area at the left of the ribbon toolbar to move it. Double-click that area to restore the default position.
+- Drag the dotted area at the left of the ribbon toolbar to move it.
 
 ## Publishing a release
 
 The repository validates itself on each push. To publish a version, update the version in `module.json` and `package.json`, commit it, then push a matching tag:
 
 ```sh
-git tag v0.4.0
+git tag v0.5.0
 git push origin main --tags
 ```
 
