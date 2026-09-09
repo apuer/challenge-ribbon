@@ -21,6 +21,7 @@
   "CR.Reset": "Reset",
   "CR.MoveUp": "Move up",
   "CR.MoveDown": "Move down",
+  "CR.MovePanel": "Drag panel; double-click to reset position",
   "CR.ShowHud": "Show HUD",
   "CR.HideHud": "Hide HUD",
   "CR.Collapse": "Collapse",
@@ -28,6 +29,5 @@
   "CR.CompleteHidden": "complete · hidden from HUD",
   "CR.Progress": "progress",
   "CR.Threat": "threat",
-  "CR.Empty": "Add the first counter",
   "CR.SceneControl": "Challenge Ribbon"
 }

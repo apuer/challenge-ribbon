@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.0 — 2026-09-09
+
+- Made the entire GM ribbon movable by dragging the free area in its toolbar.
+- Persisted the ribbon position per client and clamped it to the visible interface.
+- Kept a wide drag area available while the ribbon is collapsed.
+- Added double-click on the drag area to restore the default position.
+- Removed the redundant empty-state “Add the first counter” button; the toolbar plus remains available.
+
 ## 0.3.0 — 2026-09-09
 
 - Replaced drag-and-drop ordering with reliable up/down buttons beside the counter controls.

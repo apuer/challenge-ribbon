@@ -11,6 +11,7 @@ const DEFAULT_STATE = Object.freeze({
 });
 
 let scheduledRender = null;
+let panelDrag = null;
 
 Hooks.once("init", () => {
   game.settings.register(MODULE_ID, STATE_SETTING, {
@@ -37,6 +38,14 @@ Hooks.once("init", () => {
     type: Boolean,
     default: false,
   });
+
+  game.settings.register(MODULE_ID, "ribbonPosition", {
+    name: "Challenge Ribbon: ribbon position",
+    scope: "client",
+    config: false,
+    type: Object,
+    default: { left: 72, top: 122 },
+  });
 });
 
 Hooks.on("getSceneControlButtons", controls => {
@@ -60,6 +69,7 @@ Hooks.on("canvasReady", () => renderChallengeRibbon());
 Hooks.once("ready", async () => {
   await migrateLegacySceneState();
   renderChallengeRibbon();
+  window.addEventListener("resize", renderChallengeRibbon);
 });
 
 function t(key) {
@@ -124,6 +134,8 @@ function ensureRoot() {
   root = document.createElement("div");
   root.id = ROOT_ID;
   root.addEventListener("click", onRootClick);
+  root.addEventListener("pointerdown", startPanelDrag);
+  root.addEventListener("dblclick", resetPanelPosition);
   document.getElementById("interface")?.append(root);
   return root;
 }
@@ -140,6 +152,9 @@ function renderChallengeRibbon() {
     ${ribbonOpen ? renderRibbon(state, collapsed) : ""}
   `;
 
+  const ribbon = root.querySelector(".cr-ribbon");
+  if (ribbon) applyPanelPosition(ribbon, root);
+
   const nextExit = nextCompletionExit(state);
   if (nextExit !== null) {
     scheduledRender = window.setTimeout(renderChallengeRibbon, Math.max(25, nextExit));
@@ -151,6 +166,9 @@ function renderRibbon(state, collapsed) {
   return `
     <section class="cr-ribbon ${collapsed ? "is-collapsed" : ""}" aria-label="${escapeHtml(t("CR.Title"))}">
       <div class="cr-ribbon__toolbar">
+        <div class="cr-panel-drag-handle" data-panel-drag-handle title="${escapeHtml(t("CR.MovePanel"))}">
+          <span aria-hidden="true">••••</span>
+        </div>
         <button class="cr-icon-button ${state.hudVisible ? "is-active" : ""}" data-action="toggle-hud" title="${escapeHtml(hudLabel)}" aria-label="${escapeHtml(hudLabel)}">
           <i class="fa-solid ${state.hudVisible ? "fa-eye" : "fa-eye-slash"}"></i>
         </button>
@@ -160,7 +178,7 @@ function renderRibbon(state, collapsed) {
         </button>
       </div>
       <div class="cr-ribbon__body">
-        ${state.counters.length ? state.counters.map((counter, index) => renderCounterRow(counter, index, state.counters.length)).join("") : `<button class="cr-empty" data-action="add"><i class="fa-solid fa-plus"></i>${escapeHtml(t("CR.Empty"))}</button>`}
+        ${state.counters.map((counter, index) => renderCounterRow(counter, index, state.counters.length)).join("")}
       </div>
     </section>
   `;
@@ -282,6 +300,80 @@ function applyDelta(counter, delta) {
   const complete = isComplete(counter);
   if (!wasComplete && complete) counter.completedAt = Date.now();
   if (!complete) counter.completedAt = null;
+}
+
+function applyPanelPosition(ribbon, root) {
+  const saved = game.settings.get(MODULE_ID, "ribbonPosition") ?? {};
+  const position = clampPanelPosition(
+    { left: numberOr(saved.left, 72), top: numberOr(saved.top, 122) },
+    ribbon,
+    root,
+  );
+  ribbon.style.left = `${position.left}px`;
+  ribbon.style.top = `${position.top}px`;
+}
+
+function startPanelDrag(event) {
+  const handle = event.target.closest("[data-panel-drag-handle]");
+  if (!handle || !game.user.isGM || event.button !== 0) return;
+  const ribbon = handle.closest(".cr-ribbon");
+  const root = document.getElementById(ROOT_ID);
+  if (!ribbon || !root) return;
+
+  const rootRect = root.getBoundingClientRect();
+  const ribbonRect = ribbon.getBoundingClientRect();
+  panelDrag = {
+    ribbon,
+    root,
+    startX: event.clientX,
+    startY: event.clientY,
+    startLeft: ribbonRect.left - rootRect.left,
+    startTop: ribbonRect.top - rootRect.top,
+  };
+  ribbon.classList.add("is-panel-dragging");
+  document.addEventListener("pointermove", movePanel);
+  document.addEventListener("pointerup", finishPanelDrag, { once: true });
+  document.addEventListener("pointercancel", finishPanelDrag, { once: true });
+  event.preventDefault();
+}
+
+function movePanel(event) {
+  if (!panelDrag) return;
+  const next = clampPanelPosition({
+    left: panelDrag.startLeft + event.clientX - panelDrag.startX,
+    top: panelDrag.startTop + event.clientY - panelDrag.startY,
+  }, panelDrag.ribbon, panelDrag.root);
+  panelDrag.ribbon.style.left = `${next.left}px`;
+  panelDrag.ribbon.style.top = `${next.top}px`;
+}
+
+async function finishPanelDrag() {
+  if (!panelDrag) return;
+  document.removeEventListener("pointermove", movePanel);
+  document.removeEventListener("pointerup", finishPanelDrag);
+  document.removeEventListener("pointercancel", finishPanelDrag);
+  const position = {
+    left: Math.round(Number.parseFloat(panelDrag.ribbon.style.left)),
+    top: Math.round(Number.parseFloat(panelDrag.ribbon.style.top)),
+  };
+  panelDrag.ribbon.classList.remove("is-panel-dragging");
+  panelDrag = null;
+  await game.settings.set(MODULE_ID, "ribbonPosition", position);
+}
+
+async function resetPanelPosition(event) {
+  if (!event.target.closest("[data-panel-drag-handle]") || !game.user.isGM) return;
+  await game.settings.set(MODULE_ID, "ribbonPosition", { left: 72, top: 122 });
+  renderChallengeRibbon();
+}
+
+function clampPanelPosition(position, ribbon, root) {
+  const maxLeft = Math.max(0, root.clientWidth - ribbon.offsetWidth);
+  const maxTop = Math.max(0, root.clientHeight - ribbon.offsetHeight);
+  return {
+    left: clamp(position.left, 0, maxLeft),
+    top: clamp(position.top, 0, maxTop),
+  };
 }
 
 async function toggleRibbon() {

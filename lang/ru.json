@@ -21,6 +21,7 @@
   "CR.Reset": "Сбросить",
   "CR.MoveUp": "Переместить выше",
   "CR.MoveDown": "Переместить ниже",
+  "CR.MovePanel": "Перетащить панель; двойной клик — вернуть на место",
   "CR.ShowHud": "Показать HUD",
   "CR.HideHud": "Скрыть HUD",
   "CR.Collapse": "Свернуть",
@@ -28,6 +29,5 @@
   "CR.CompleteHidden": "завершён · скрыт из HUD",
   "CR.Progress": "прогресс",
   "CR.Threat": "угроза",
-  "CR.Empty": "Добавьте первый счётчик",
   "CR.SceneControl": "Лента испытания"
 }
