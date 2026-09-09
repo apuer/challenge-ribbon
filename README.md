@@ -1,4 +1,4 @@
-# Challenge Ribbon 0.5.0
+# Challenge Ribbon 0.6.0
 
 A compact, system-agnostic Foundry VTT 14 module for skill-challenge counters.
 
@@ -15,6 +15,9 @@ A compact, system-agnostic Foundry VTT 14 module for skill-challenge counters.
 - Per-counter player visibility (UI-only; not secure storage).
 - Reset, delete and direct up/down reordering controls.
 - Movable GM ribbon with a per-client saved position.
+- A resizable GM counter list: six visible rows by default, two-row minimum, 80vh maximum, saved per client.
+- One-line public HUD with overflow arrows and vertical-wheel-to-horizontal scrolling for up to ten counters.
+- Collision-aware placement below TheRipper93's Carousel Combat Tracker without requiring it as a dependency.
 - Russian and English localization.
 - Reduced-motion support.
 
@@ -52,7 +55,7 @@ The module stores one shared set of counters for the whole World, so counters re
 The repository validates itself on each push. To publish a version, update the version in `module.json` and `package.json`, commit it, then push a matching tag:
 
 ```sh
-git tag v0.5.0
+git tag v0.6.0
 git push origin main --tags
 ```
 

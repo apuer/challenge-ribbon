@@ -24,7 +24,7 @@ Object.assign(manifest, {
 });
 
 await writeFile(path.join(stage, "module.json"), `${JSON.stringify(manifest, null, 2)}\n`);
-for (const entry of ["LICENSE", "README.md", "lang", "scripts/challenge-ribbon.js", "scripts/counter-model.js", "styles"]) {
+for (const entry of ["LICENSE", "README.md", "lang", "scripts/challenge-ribbon.js", "scripts/counter-model.js", "scripts/layout-model.js", "styles"]) {
   await cp(path.join(root, entry), path.join(stage, entry), { recursive: true });
 }
 

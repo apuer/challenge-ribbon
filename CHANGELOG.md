@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.0 — 2026-09-09
+
+- Added collision-aware HUD placement for `#combat-dock` from Carousel Combat Tracker, with a smooth 8 px gap and no hard dependency.
+- Added horizontal HUD overflow arrows that appear only when needed.
+- Added vertical-wheel and trackpad scrolling for the one-line HUD.
+- Limited the GM list to six visible rows by default with vertical scrolling beyond that.
+- Added a bottom resize handle with a two-row minimum, 80vh maximum and per-client saved height.
+- Added tested layout geometry and overflow rules.
+
 ## 0.5.0 — 2026-09-09
 
 - Fixed new reverse counters so Start and Current automatically follow the configured Limit.

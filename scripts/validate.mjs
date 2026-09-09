@@ -5,6 +5,7 @@ const requiredFiles = [
   "module.json",
   "scripts/challenge-ribbon.js",
   "scripts/counter-model.js",
+  "scripts/layout-model.js",
   "styles/challenge-ribbon.css",
   "lang/en.json",
   "lang/ru.json",
@@ -34,5 +35,6 @@ if (JSON.stringify(englishKeys) !== JSON.stringify(russianKeys)) {
 
 execFileSync(process.execPath, ["--check", "scripts/challenge-ribbon.js"], { stdio: "inherit" });
 execFileSync(process.execPath, ["--check", "scripts/counter-model.js"], { stdio: "inherit" });
+execFileSync(process.execPath, ["--check", "scripts/layout-model.js"], { stdio: "inherit" });
 execFileSync(process.execPath, ["--test", "tests/*.test.mjs"], { stdio: "inherit" });
 console.log(`Challenge Ribbon ${manifest.version}: validation passed.`);

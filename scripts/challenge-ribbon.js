@@ -10,6 +10,14 @@ import {
   normalizeCounter,
   parseCounterDirection,
 } from "./counter-model.js";
+import {
+  COUNTER_ROW_HEIGHT,
+  DEFAULT_VISIBLE_ROWS,
+  HUD_BASE_TOP,
+  clampRibbonListHeight,
+  computeHudTop,
+  hasHorizontalOverflow,
+} from "./layout-model.js";
 
 const MODULE_ID = "challenge-ribbon";
 const STATE_SETTING = "state";
@@ -26,6 +34,11 @@ const DEFAULT_STATE = Object.freeze({
 
 let scheduledRender = null;
 let panelDrag = null;
+let panelResize = null;
+let hudLayoutFrame = null;
+let hudResizeObserver = null;
+let hudTreeObserver = null;
+let combatDockObserver = null;
 
 Hooks.once("init", () => {
   game.settings.register(MODULE_ID, STATE_SETTING, {
@@ -61,6 +74,14 @@ Hooks.once("init", () => {
     default: { left: 72, top: 122 },
   });
 
+  game.settings.register(MODULE_ID, "ribbonListHeight", {
+    name: "Challenge Ribbon: ribbon list height",
+    scope: "client",
+    config: false,
+    type: Number,
+    default: COUNTER_ROW_HEIGHT * DEFAULT_VISIBLE_ROWS,
+  });
+
   game.settings.register(MODULE_ID, LEGACY_MIGRATION_SETTING, {
     name: "Challenge Ribbon: legacy Scene migration completed",
     scope: "world",
@@ -94,6 +115,7 @@ Hooks.on("canvasReady", async () => {
 Hooks.once("ready", async () => {
   await migrateLegacySceneState();
   renderChallengeRibbon();
+  setupHudLayoutObservers();
   window.addEventListener("resize", renderChallengeRibbon);
 });
 
@@ -146,6 +168,9 @@ function ensureRoot() {
   root.id = ROOT_ID;
   root.addEventListener("click", onRootClick);
   root.addEventListener("pointerdown", startPanelDrag);
+  root.addEventListener("pointerdown", startPanelResize);
+  root.addEventListener("scroll", updateHudOverflowControls, true);
+  root.addEventListener("wheel", onHudWheel, { passive: false });
   document.getElementById("interface")?.append(root);
   return root;
 }
@@ -163,7 +188,12 @@ function renderChallengeRibbon() {
   `;
 
   const ribbon = root.querySelector(".cr-ribbon");
-  if (ribbon) applyPanelPosition(ribbon, root);
+  if (ribbon) {
+    applyPanelListHeight(ribbon);
+    applyPanelPosition(ribbon, root);
+  }
+  refreshHudLayoutTargets();
+  scheduleHudLayout();
 
   const nextExit = nextCompletionExit(state);
   if (nextExit !== null) {
@@ -190,6 +220,7 @@ function renderRibbon(state, collapsed) {
       <div class="cr-ribbon__body">
         ${state.counters.map((counter, index) => renderCounterRow(counter, index, state.counters.length)).join("")}
       </div>
+      <div class="cr-panel-resize-handle" data-panel-resize-handle title="${escapeHtml(t("CR.ResizePanel"))}"></div>
     </section>
   `;
 }
@@ -233,7 +264,9 @@ function renderHud(state) {
 
   return `
     <section class="cr-hud" aria-label="${escapeHtml(t("CR.Title"))}">
-      <div class="cr-hud__counters">${counters.map(renderHudCounter).join("")}</div>
+      <button class="cr-hud-scroll cr-hud-scroll--previous" data-action="hud-scroll-previous" aria-label="${escapeHtml(t("CR.ScrollPrevious"))}" hidden><i class="fa-solid fa-chevron-left"></i></button>
+      <div class="cr-hud__viewport"><div class="cr-hud__counters">${counters.map(renderHudCounter).join("")}</div></div>
+      <button class="cr-hud-scroll cr-hud-scroll--next" data-action="hud-scroll-next" aria-label="${escapeHtml(t("CR.ScrollNext"))}" hidden><i class="fa-solid fa-chevron-right"></i></button>
     </section>
   `;
 }
@@ -272,8 +305,11 @@ function renderHourglass(counter, size) {
 
 async function onRootClick(event) {
   const target = event.target.closest("[data-action]");
-  if (!target || !game.user.isGM) return;
+  if (!target) return;
   const action = target.dataset.action;
+  if (action === "hud-scroll-previous") return scrollHud(-1);
+  if (action === "hud-scroll-next") return scrollHud(1);
+  if (!game.user.isGM) return;
   const row = target.closest("[data-counter-id]");
   const state = getState();
   const index = state.counters.findIndex(counter => counter.id === row?.dataset.counterId);
@@ -317,6 +353,16 @@ function applyPanelPosition(ribbon, root) {
   );
   ribbon.style.left = `${position.left}px`;
   ribbon.style.top = `${position.top}px`;
+}
+
+function applyPanelListHeight(ribbon) {
+  const body = ribbon.querySelector(".cr-ribbon__body");
+  if (!body) return;
+  const height = clampRibbonListHeight(
+    game.settings.get(MODULE_ID, "ribbonListHeight"),
+    window.innerHeight,
+  );
+  body.style.maxHeight = `${height}px`;
 }
 
 function startPanelDrag(event) {
@@ -367,6 +413,54 @@ async function finishPanelDrag() {
   await game.settings.set(MODULE_ID, "ribbonPosition", position);
 }
 
+function startPanelResize(event) {
+  const handle = event.target.closest("[data-panel-resize-handle]");
+  if (!handle || !game.user.isGM || event.button !== 0) return;
+  const ribbon = handle.closest(".cr-ribbon");
+  const body = ribbon?.querySelector(".cr-ribbon__body");
+  const root = document.getElementById(ROOT_ID);
+  if (!ribbon || !body || !root) return;
+  panelResize = {
+    ribbon,
+    body,
+    root,
+    startY: event.clientY,
+    startHeight: body.getBoundingClientRect().height,
+    height: body.getBoundingClientRect().height,
+  };
+  ribbon.classList.add("is-panel-resizing");
+  document.addEventListener("pointermove", resizePanel);
+  document.addEventListener("pointerup", finishPanelResize, { once: true });
+  document.addEventListener("pointercancel", finishPanelResize, { once: true });
+  event.preventDefault();
+}
+
+function resizePanel(event) {
+  if (!panelResize) return;
+  panelResize.height = clampRibbonListHeight(
+    panelResize.startHeight + event.clientY - panelResize.startY,
+    window.innerHeight,
+  );
+  panelResize.body.style.maxHeight = `${panelResize.height}px`;
+  const position = clampPanelPosition({
+    left: Number.parseFloat(panelResize.ribbon.style.left),
+    top: Number.parseFloat(panelResize.ribbon.style.top),
+  }, panelResize.ribbon, panelResize.root);
+  panelResize.ribbon.style.left = `${position.left}px`;
+  panelResize.ribbon.style.top = `${position.top}px`;
+}
+
+async function finishPanelResize() {
+  if (!panelResize) return;
+  document.removeEventListener("pointermove", resizePanel);
+  document.removeEventListener("pointerup", finishPanelResize);
+  document.removeEventListener("pointercancel", finishPanelResize);
+  const height = Math.round(panelResize.height);
+  panelResize.ribbon.classList.remove("is-panel-resizing");
+  panelResize = null;
+  await game.settings.set(MODULE_ID, "ribbonListHeight", height);
+}
+
 function clampPanelPosition(position, ribbon, root) {
   const maxLeft = Math.max(0, root.clientWidth - ribbon.offsetWidth);
   const maxTop = Math.max(0, root.clientHeight - ribbon.offsetHeight);
@@ -374,6 +468,102 @@ function clampPanelPosition(position, ribbon, root) {
     left: clamp(position.left, 0, maxLeft),
     top: clamp(position.top, 0, maxTop),
   };
+}
+
+function setupHudLayoutObservers() {
+  if (typeof MutationObserver === "undefined" || typeof ResizeObserver === "undefined") return;
+  hudResizeObserver = new ResizeObserver(scheduleHudLayout);
+  hudTreeObserver = new MutationObserver(() => {
+    refreshHudLayoutTargets();
+    scheduleHudLayout();
+  });
+  hudTreeObserver.observe(document.body, { childList: true, subtree: true });
+  refreshHudLayoutTargets();
+}
+
+function refreshHudLayoutTargets() {
+  if (!hudResizeObserver) return;
+  hudResizeObserver.disconnect();
+  combatDockObserver?.disconnect();
+  const hud = document.querySelector(`#${ROOT_ID} .cr-hud`);
+  const combatDock = document.querySelector("#combat-dock");
+  const viewport = hud?.querySelector(".cr-hud__viewport");
+  if (hud) hudResizeObserver.observe(hud);
+  if (viewport) hudResizeObserver.observe(viewport);
+  if (combatDock) {
+    hudResizeObserver.observe(combatDock);
+    combatDockObserver = new MutationObserver(scheduleHudLayout);
+    combatDockObserver.observe(combatDock, { attributes: true, attributeFilter: ["class", "style", "hidden"] });
+  }
+}
+
+function scheduleHudLayout() {
+  window.cancelAnimationFrame?.(hudLayoutFrame);
+  hudLayoutFrame = window.requestAnimationFrame(() => {
+    positionHudAroundCombatDock();
+    updateHudOverflowControls();
+  });
+}
+
+function positionHudAroundCombatDock() {
+  const root = document.getElementById(ROOT_ID);
+  const hud = root?.querySelector(".cr-hud");
+  if (!root || !hud) return;
+  const combatDock = document.querySelector("#combat-dock");
+  if (!isVisible(combatDock)) {
+    hud.style.top = `${HUD_BASE_TOP}px`;
+    return;
+  }
+  const rootRect = root.getBoundingClientRect();
+  const currentHudRect = hud.getBoundingClientRect();
+  const baseHudRect = {
+    left: currentHudRect.left,
+    right: currentHudRect.right,
+    top: rootRect.top + HUD_BASE_TOP,
+    bottom: rootRect.top + HUD_BASE_TOP + currentHudRect.height,
+  };
+  const top = computeHudTop({
+    hudRect: baseHudRect,
+    obstacleRect: combatDock.getBoundingClientRect(),
+    rootTop: rootRect.top,
+  });
+  hud.style.top = `${top}px`;
+}
+
+function isVisible(element) {
+  if (!element) return false;
+  const rect = element.getBoundingClientRect();
+  const style = window.getComputedStyle(element);
+  return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden";
+}
+
+function updateHudOverflowControls() {
+  const hud = document.querySelector(`#${ROOT_ID} .cr-hud`);
+  const viewport = hud?.querySelector(".cr-hud__viewport");
+  if (!hud || !viewport) return;
+  const overflow = hasHorizontalOverflow(viewport);
+  const previous = hud.querySelector(".cr-hud-scroll--previous");
+  const next = hud.querySelector(".cr-hud-scroll--next");
+  previous.hidden = !overflow;
+  next.hidden = !overflow;
+  previous.disabled = !overflow || viewport.scrollLeft <= 1;
+  next.disabled = !overflow || viewport.scrollLeft + viewport.clientWidth >= viewport.scrollWidth - 1;
+}
+
+function scrollHud(direction) {
+  const viewport = document.querySelector(`#${ROOT_ID} .cr-hud__viewport`);
+  if (!viewport) return;
+  viewport.scrollBy({ left: direction * Math.min(viewport.clientWidth * 0.75, 360), behavior: "smooth" });
+}
+
+function onHudWheel(event) {
+  const hud = event.target.closest?.(".cr-hud");
+  const viewport = hud?.querySelector(".cr-hud__viewport");
+  if (!viewport || !hasHorizontalOverflow(viewport)) return;
+  const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
+  viewport.scrollLeft += delta;
+  updateHudOverflowControls();
+  event.preventDefault();
 }
 
 async function toggleRibbon() {
