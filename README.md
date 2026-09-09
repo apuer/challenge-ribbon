@@ -21,10 +21,10 @@ A compact, system-agnostic Foundry VTT 14 module for skill-challenge counters.
 After a GitHub release is published, open **Bazaar → Custom Modules → Install via Manifest URL** and paste:
 
 ```text
-https://github.com/OWNER/challenge-ribbon/releases/latest/download/module.json
+https://github.com/apuer/challenge-ribbon/releases/latest/download/module.json
 ```
 
-Replace `OWNER` with the GitHub account or organization that owns the repository. If Forge offers a Bazaar copy, disable **Install from the Bazaar if the package is found** so the custom manifest is used.
+If Forge offers a Bazaar copy, disable **Install from the Bazaar if the package is found** so the custom manifest is used.
 
 The URL remains stable across releases. New tags such as `v0.2.0` automatically publish an updated manifest and module archive through GitHub Actions.
 
