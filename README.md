@@ -1,4 +1,4 @@
-# Challenge Ribbon 0.2.0
+# Challenge Ribbon 0.3.0
 
 A compact, system-agnostic Foundry VTT 14 module for skill-challenge counters.
 
@@ -10,10 +10,10 @@ A compact, system-agnostic Foundry VTT 14 module for skill-challenge counters.
 - Increasing green or red intensity as a counter approaches its maximum.
 - Completion flash.
 - Optional **hide from HUD when complete** animation per counter.
-- Start, current and maximum values.
-- Forward counters that complete at the maximum and reverse counters that complete at the minimum.
+- Start, current and limit values.
+- Forward counters that complete at the limit and reverse counters that complete at zero.
 - Per-counter player visibility (UI-only; not secure storage).
-- Reset, delete and drag-and-drop reordering.
+- Reset, delete and direct up/down reordering controls.
 - Russian and English localization.
 - Reduced-motion support.
 
@@ -50,7 +50,7 @@ The module stores one shared set of counters for the whole World, so counters re
 The repository validates itself on each push. To publish a version, update the version in `module.json` and `package.json`, commit it, then push a matching tag:
 
 ```sh
-git tag v0.2.0
+git tag v0.3.0
 git push origin main --tags
 ```
 

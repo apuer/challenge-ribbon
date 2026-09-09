@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.0 — 2026-09-09
+
+- Replaced drag-and-drop ordering with reliable up/down buttons beside the counter controls.
+- Simplified numeric configuration to Start, Current and Limit; reverse counters always finish at zero.
+- Restyled the ribbon, HUD, controls and hourglasses with warm wood, brass and parchment tones.
+- Strengthened the red background for negative counters.
+- Added a two-beat red completion pulse for negative counters.
+
 ## 0.2.0 — 2026-09-09
 
 - Removed challenge titles from both the GM ribbon and public HUD.

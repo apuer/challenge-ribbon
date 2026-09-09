@@ -5,13 +5,12 @@ const ROOT_ID = "challenge-ribbon-root";
 const HUD_EXIT_MS = 1150;
 
 const DEFAULT_STATE = Object.freeze({
-  version: 2,
+  version: 3,
   hudVisible: false,
   counters: [],
 });
 
 let scheduledRender = null;
-let draggedCounterId = null;
 
 Hooks.once("init", () => {
   game.settings.register(MODULE_ID, STATE_SETTING, {
@@ -72,7 +71,7 @@ function getState() {
   const state = {
     ...foundry.utils.deepClone(DEFAULT_STATE),
     ...(saved ? foundry.utils.deepClone(saved) : {}),
-    version: 2,
+    version: 3,
   };
   state.counters = Array.isArray(state.counters) ? state.counters.map(normalizeCounter) : [];
   return state;
@@ -80,7 +79,7 @@ function getState() {
 
 async function saveState(state) {
   if (!game.user.isGM) return;
-  state.version = 2;
+  state.version = 3;
   await game.settings.set(MODULE_ID, STATE_SETTING, state);
 }
 
@@ -93,15 +92,15 @@ async function migrateLegacySceneState() {
   if (!legacy?.counters?.length) return;
 
   await saveState({
-    version: 2,
+    version: 3,
     hudVisible: Boolean(legacy.hudVisible),
     counters: legacy.counters.map(normalizeCounter),
   });
 }
 
 function normalizeCounter(counter) {
-  const min = numberOr(counter.min, 0);
-  const max = Math.max(min + 1, numberOr(counter.max, 4));
+  const min = 0;
+  const max = Math.max(1, numberOr(counter.max, 4));
   const direction = counter.direction === "down" ? "down" : "up";
   return {
     id: counter.id || foundry.utils.randomID(),
@@ -125,10 +124,6 @@ function ensureRoot() {
   root = document.createElement("div");
   root.id = ROOT_ID;
   root.addEventListener("click", onRootClick);
-  root.addEventListener("dragstart", onDragStart);
-  root.addEventListener("dragover", onDragOver);
-  root.addEventListener("drop", onDrop);
-  root.addEventListener("dragend", clearDragState);
   document.getElementById("interface")?.append(root);
   return root;
 }
@@ -165,13 +160,13 @@ function renderRibbon(state, collapsed) {
         </button>
       </div>
       <div class="cr-ribbon__body">
-        ${state.counters.length ? state.counters.map(renderCounterRow).join("") : `<button class="cr-empty" data-action="add"><i class="fa-solid fa-plus"></i>${escapeHtml(t("CR.Empty"))}</button>`}
+        ${state.counters.length ? state.counters.map((counter, index) => renderCounterRow(counter, index, state.counters.length)).join("") : `<button class="cr-empty" data-action="add"><i class="fa-solid fa-plus"></i>${escapeHtml(t("CR.Empty"))}</button>`}
       </div>
     </section>
   `;
 }
 
-function renderCounterRow(counter) {
+function renderCounterRow(counter, index, total) {
   const complete = isComplete(counter);
   const archived = complete && counter.hideWhenComplete;
   const recent = isRecentlyCompleted(counter);
@@ -190,7 +185,10 @@ function renderCounterRow(counter) {
         <button data-action="decrement" aria-label="− ${escapeHtml(counter.label)}">−</button>
         <button data-action="increment" aria-label="+ ${escapeHtml(counter.label)}">+</button>
       </div>
-      <button class="cr-drag-handle" draggable="true" data-drag-counter-id="${counter.id}" title="${escapeHtml(t("CR.DragToReorder"))}" aria-label="${escapeHtml(t("CR.DragToReorder"))}"><i class="fa-solid fa-grip-vertical"></i></button>
+      <div class="cr-order-buttons">
+        <button data-action="move-up" ${index === 0 ? "disabled" : ""} title="${escapeHtml(t("CR.MoveUp"))}" aria-label="${escapeHtml(t("CR.MoveUp"))}"><i class="fa-solid fa-chevron-up"></i></button>
+        <button data-action="move-down" ${index === total - 1 ? "disabled" : ""} title="${escapeHtml(t("CR.MoveDown"))}" aria-label="${escapeHtml(t("CR.MoveDown"))}"><i class="fa-solid fa-chevron-down"></i></button>
+      </div>
     </article>
   `;
 }
@@ -269,6 +267,12 @@ async function onRootClick(event) {
   }
   if (action === "increment" && counter) applyDelta(counter, 1);
   if (action === "decrement" && counter) applyDelta(counter, -1);
+  if (action === "move-up" && counter && index > 0) {
+    [state.counters[index - 1], state.counters[index]] = [state.counters[index], state.counters[index - 1]];
+  }
+  if (action === "move-down" && counter && index < state.counters.length - 1) {
+    [state.counters[index + 1], state.counters[index]] = [state.counters[index], state.counters[index + 1]];
+  }
   await saveState(state);
 }
 
@@ -278,52 +282,6 @@ function applyDelta(counter, delta) {
   const complete = isComplete(counter);
   if (!wasComplete && complete) counter.completedAt = Date.now();
   if (!complete) counter.completedAt = null;
-}
-
-function onDragStart(event) {
-  const handle = event.target.closest("[data-drag-counter-id]");
-  if (!handle || !game.user.isGM) return;
-  draggedCounterId = handle.dataset.dragCounterId;
-  event.dataTransfer.effectAllowed = "move";
-  event.dataTransfer.setData("text/plain", draggedCounterId);
-  handle.closest(".cr-counter")?.classList.add("is-dragging");
-}
-
-function onDragOver(event) {
-  const row = event.target.closest("[data-counter-id]");
-  if (!row || !draggedCounterId || row.dataset.counterId === draggedCounterId) return;
-  event.preventDefault();
-  clearDropIndicators();
-  const before = event.clientY < row.getBoundingClientRect().top + row.offsetHeight / 2;
-  row.classList.add(before ? "drag-before" : "drag-after");
-}
-
-async function onDrop(event) {
-  const row = event.target.closest("[data-counter-id]");
-  if (!row || !draggedCounterId || row.dataset.counterId === draggedCounterId) return clearDragState();
-  event.preventDefault();
-  const state = getState();
-  const dragged = state.counters.find(counter => counter.id === draggedCounterId);
-  if (!dragged) return clearDragState();
-  const remaining = state.counters.filter(counter => counter.id !== draggedCounterId);
-  const targetIndex = remaining.findIndex(counter => counter.id === row.dataset.counterId);
-  const before = event.clientY < row.getBoundingClientRect().top + row.offsetHeight / 2;
-  remaining.splice(targetIndex + (before ? 0 : 1), 0, dragged);
-  state.counters = remaining;
-  clearDragState();
-  await saveState(state);
-}
-
-function clearDropIndicators() {
-  document.querySelectorAll("#challenge-ribbon-root .drag-before, #challenge-ribbon-root .drag-after")
-    .forEach(element => element.classList.remove("drag-before", "drag-after"));
-}
-
-function clearDragState() {
-  draggedCounterId = null;
-  clearDropIndicators();
-  document.querySelectorAll("#challenge-ribbon-root .is-dragging")
-    .forEach(element => element.classList.remove("is-dragging"));
 }
 
 async function toggleRibbon() {
@@ -352,10 +310,9 @@ function openCounterDialog(existing = null, existingIndex = -1, opener = null) {
       <label class="cr-field"><span>${escapeHtml(t("CR.Type"))}</span><select name="kind"><option value="positive" ${counter.kind === "positive" ? "selected" : ""}>${escapeHtml(t("CR.Positive"))}</option><option value="negative" ${counter.kind === "negative" ? "selected" : ""}>${escapeHtml(t("CR.Negative"))}</option></select></label>
       <label class="cr-field"><span>${escapeHtml(t("CR.Direction"))}</span><select name="direction"><option value="up" ${counter.direction === "up" ? "selected" : ""}>${escapeHtml(t("CR.CountUp"))}</option><option value="down" ${counter.direction === "down" ? "selected" : ""}>${escapeHtml(t("CR.CountDown"))}</option></select></label>
       <div class="cr-form__numbers">
-        <label class="cr-field"><span>${escapeHtml(t("CR.Minimum"))}</span><input name="min" type="number" min="-999" max="998" value="${counter.min}" required /></label>
         <label class="cr-field"><span>${escapeHtml(t("CR.Start"))}</span><input name="start" type="number" min="-999" max="999" value="${counter.start}" required /></label>
         <label class="cr-field"><span>${escapeHtml(t("CR.Current"))}</span><input name="value" type="number" min="-999" max="999" value="${counter.value}" required /></label>
-        <label class="cr-field"><span>${escapeHtml(t("CR.Maximum"))}</span><input name="max" type="number" min="-998" max="999" value="${counter.max}" required /></label>
+        <label class="cr-field"><span>${escapeHtml(t("CR.Limit"))}</span><input name="max" type="number" min="1" max="999" value="${counter.max}" required /></label>
       </div>
       <label class="cr-check"><input name="showToPlayers" type="checkbox" ${counter.showToPlayers ? "checked" : ""} /><span>${escapeHtml(t("CR.ShowToPlayers"))}</span></label>
       <label class="cr-check"><input name="hideWhenComplete" type="checkbox" ${counter.hideWhenComplete ? "checked" : ""} /><span>${escapeHtml(t("CR.HideWhenComplete"))}</span></label>
@@ -371,8 +328,8 @@ function openCounterDialog(existing = null, existingIndex = -1, opener = null) {
     if (event.submitter?.value !== "save") return;
     event.preventDefault();
     const data = new FormData(event.currentTarget);
-    const min = numberOr(data.get("min"), 0);
-    const max = Math.max(min + 1, numberOr(data.get("max"), min + 1));
+    const min = 0;
+    const max = Math.max(1, numberOr(data.get("max"), 1));
     const direction = data.get("direction") === "down" ? "down" : "up";
     const value = clamp(numberOr(data.get("value"), direction === "down" ? max : min), min, max);
     const start = clamp(numberOr(data.get("start"), direction === "down" ? max : min), min, max);
